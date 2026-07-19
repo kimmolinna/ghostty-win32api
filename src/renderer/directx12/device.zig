@@ -38,6 +38,10 @@ fence_event: std.os.windows.HANDLE,
 
 swap_chain: ?*dxgi.IDXGISwapChain1,
 
+/// Waitable object from DXGI when FRAME_LATENCY_WAITABLE_OBJECT is set (#93).
+/// Null in shared-texture mode or if QI/setup fails.
+frame_latency_waitable: ?std.os.windows.HANDLE = null,
+
 /// DirectComposition surface handle backing the swap chain in
 /// SwapChainPanel mode. Owned by Device: created in init, closed in
 /// deinit. The embedder retrieves it via
@@ -410,6 +414,7 @@ pub fn deinit(self: *Device) void {
     self.waitForGpu() catch {};
 
     _ = d3d12.CloseHandle(self.fence_event);
+    if (self.frame_latency_waitable) |h| _ = d3d12.CloseHandle(h);
     _ = self.fence.Release();
     _ = self.command_queue.Release();
 
@@ -570,7 +575,7 @@ fn compositionSwapChainDesc(width: u32, height: u32) dxgi.DXGI_SWAP_CHAIN_DESC1 
         // premultiplied alpha compositing through DWM.
         .SwapEffect = .FLIP_SEQUENTIAL,
         .AlphaMode = .PREMULTIPLIED,
-        .Flags = 0,
+        .Flags = dxgi.DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
     };
 }
 

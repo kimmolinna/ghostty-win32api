@@ -45,6 +45,9 @@ pub const DXGI_ALPHA_MODE = enum(u32) {
 pub const DXGI_USAGE = u32;
 pub const DXGI_USAGE_RENDER_TARGET_OUTPUT: DXGI_USAGE = 0x00000020;
 
+/// DXGI_SWAP_CHAIN_FLAG values used by composition swap chains.
+pub const DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT: u32 = 0x40;
+
 /// Win32 HWND is a pointer-sized handle, same underlying type as HANDLE.
 pub const HWND = std.os.windows.HANDLE;
 
@@ -382,9 +385,9 @@ pub const IDXGISwapChain3 = extern struct {
         // IDXGISwapChain2
         SetSourceSize: Reserved,
         GetSourceSize: Reserved,
-        SetMaximumFrameLatency: Reserved,
+        SetMaximumFrameLatency: *const fn (*IDXGISwapChain3, u32) callconv(.winapi) HRESULT,
         GetMaximumFrameLatency: Reserved,
-        GetFrameLatencyWaitableObject: Reserved,
+        GetFrameLatencyWaitableObject: *const fn (*IDXGISwapChain3) callconv(.winapi) std.os.windows.HANDLE,
         SetMatrixTransform: Reserved,
         GetMatrixTransform: Reserved,
         // IDXGISwapChain3
@@ -397,6 +400,14 @@ pub const IDXGISwapChain3 = extern struct {
 
     pub inline fn GetBuffer(self: *IDXGISwapChain3, buffer: u32, riid: *const GUID, surface: *?*anyopaque) HRESULT {
         return self.vtable.GetBuffer(self, buffer, riid, surface);
+    }
+
+    pub inline fn SetMaximumFrameLatency(self: *IDXGISwapChain3, max_latency: u32) HRESULT {
+        return self.vtable.SetMaximumFrameLatency(self, max_latency);
+    }
+
+    pub inline fn GetFrameLatencyWaitableObject(self: *IDXGISwapChain3) std.os.windows.HANDLE {
+        return self.vtable.GetFrameLatencyWaitableObject(self);
     }
 
     pub inline fn GetCurrentBackBufferIndex(self: *IDXGISwapChain3) u32 {

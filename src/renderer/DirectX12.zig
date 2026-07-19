@@ -242,6 +242,17 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !DirectX12 {
             return error.SwapChain3QueryFailed;
         }
         result.swap_chain3 = sc3;
+
+        // #93: waitable swap chain — limit queued frames and wait in beginFrame.
+        const lat_hr = sc3.?.SetMaximumFrameLatency(1);
+        if (com.FAILED(lat_hr)) {
+            log.warn("SetMaximumFrameLatency failed: 0x{x}", .{@as(u32, @bitCast(lat_hr))});
+        } else {
+            const waitable = sc3.?.GetFrameLatencyWaitableObject();
+            if (waitable != std.os.windows.INVALID_HANDLE_VALUE) {
+                dev_ptr.frame_latency_waitable = waitable;
+            }
+        }
     }
     errdefer if (result.swap_chain3) |sc3| {
         _ = sc3.Release();
@@ -677,8 +688,8 @@ fn resizeSwapChain(self: *DirectX12, width: u32, height: u32) !void {
         }
     }
 
-    // UNKNOWN format and 0 flags preserve whatever the swap chain was
-    // created with -- the same values device.zig used at creation time.
+    // UNKNOWN format; must re-pass FRAME_LATENCY_WAITABLE_OBJECT when set at
+    // creation (#93) or DXGI drops the waitable object.
     // ResizeBuffers lives on IDXGISwapChain1. IDXGISwapChain3 inherits
     // from IDXGISwapChain1 in COM, so the v-table prefix is identical and
     // a pointer reinterpret is safe; we use it instead of QueryInterface
@@ -689,7 +700,7 @@ fn resizeSwapChain(self: *DirectX12, width: u32, height: u32) !void {
         width,
         height,
         .UNKNOWN,
-        0,
+        dxgi.DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
     );
     if (hr == com.DXGI_ERROR_DEVICE_REMOVED or
         hr == com.DXGI_ERROR_DEVICE_HUNG or
@@ -783,6 +794,11 @@ pub inline fn beginFrame(
     const api: *DirectX12 = &renderer.api;
     if (api.device_lost) return error.DeviceLost;
     const dev_ptr = &(api.dev orelse return error.NoDevice);
+
+    // #93: wait until DXGI allows another frame (FRAME_LATENCY_WAITABLE_OBJECT).
+    if (dev_ptr.frame_latency_waitable) |h| {
+        _ = d3d12.WaitForSingleObject(h, d3d12.INFINITE);
+    }
 
     // Pre-flight device health check.  GetDeviceRemovedReason is cheap
     // (no GPU stall) and catches TDR/crashes from the PREVIOUS frame
